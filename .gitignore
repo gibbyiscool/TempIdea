@@ -1,11 +1,29 @@
+# Build artifacts
 build/
-.vscode/
-*.o
-*.a
-*.out
-*.log
-.DS_Store
+*.uf2
+*.elf
+*.bin
+*.hex
+*.map
 
-.env
-.env.local
-.env.*.local
+# Generated files (uncomment if you want to regenerate)
+# firmware/src/ui/generated/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary files
+*.tmp
+*.log

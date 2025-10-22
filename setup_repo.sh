@@ -1,445 +1,1248 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
-APP_NAME="${1:-tempidea}"
+################################################################################
+# TempIdea Repository Setup Script
+# Sets up the complete project structure for LVGL Cloud Editor integration
+# and RP2350 firmware development
+################################################################################
 
-echo "🔧 Scaffolding repo: ${APP_NAME}"
-mkdir -p "$APP_NAME"
-cd "$APP_NAME"
+set -e  # Exit on error
 
-# ---------------------------
-# Repo layout
-# ---------------------------
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Project name
+PROJECT_NAME="TempIdea"
+REPO_ROOT=$(pwd)
+
+echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║  TempIdea Repository Setup                            ║${NC}"
+echo -e "${BLUE}║  LVGL Cloud Editor + RP2350 Firmware Integration      ║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
+echo ""
+
+################################################################################
+# Create Directory Structure
+################################################################################
+
+echo -e "${GREEN}[1/10] Creating directory structure...${NC}"
+
+# Root level directories
+mkdir -p .github/workflows
+mkdir -p docs/{hardware,api,guides}
+
+# LVGL project structure (matches Cloud Editor export)
+mkdir -p lvgl-project/{components,fonts,images,screens,widgets,preview-bin}
+
+# Firmware structure
+mkdir -p firmware/{src,include,lib}
+mkdir -p firmware/src/{drivers,ui,control,utils}
+mkdir -p firmware/src/ui/{generated,custom}
+mkdir -p firmware/include/{drivers,ui,config,control}
+
+# Scripts directory
+mkdir -p scripts
+
+# Development container
 mkdir -p .devcontainer
-mkdir -p tools
-mkdir -p editor/{components,fonts,images,preview-bin,screens,widgets}
-mkdir -p firmware/{app,ui,hal,ports/{sim,rp2350}}
 
-# ---------------------------
-# .gitignore
-# ---------------------------
-cat > .gitignore << 'EOF'
-build/
-.vscode/
-*.o
-*.a
-*.out
-*.log
-.DS_Store
-# LVGL Editor preview cache
-editor/preview-bin/
-EOF
+echo -e "  ${GREEN}✓${NC} Directory structure created"
 
-# ---------------------------
-# Devcontainer (Codespaces)
-# ---------------------------
-cat > .devcontainer/devcontainer.json << 'EOF'
-{
-  "name": "TempIdea (LVGL PC sim)",
-  "image": "mcr.microsoft.com/devcontainers/cpp:ubuntu",
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y cmake libsdl2-dev rsync && mkdir -p build && cd build && cmake .. && make -j && ./sim || true",
-  "customizations": {
-    "vscode": {
-      "extensions": ["ms-vscode.cmake-tools","twxs.cmake","ms-vscode.cpptools"]
-    }
-  }
-}
-EOF
+################################################################################
+# Create LVGL Project Files (Cloud Editor Compatible)
+################################################################################
 
-# ---------------------------
-# Top-level CMake -> firmware
-# ---------------------------
-cat > CMakeLists.txt << 'EOF'
-cmake_minimum_required(VERSION 3.16)
-project(tempidea_super C)
-add_subdirectory(firmware)
-EOF
+echo -e "${GREEN}[2/10] Creating LVGL project files...${NC}"
 
-# ---------------------------
-# LVGL config (shared)
-# ---------------------------
-cat > firmware/lv_conf.h << 'EOF'
-#ifndef LV_CONF_H
-#define LV_CONF_H
-
-#define LV_USE_LOG 1
-#define LV_LOG_LEVEL LV_LOG_LEVEL_WARN
-
-/* PC simulator (SDL) */
-#define LV_USE_DRV_SDL 1
-#define LV_USE_DRAW_SDL 1
-#define LV_USE_SDL_GPU 0
-
-/* Match target panel size */
-#define LV_HOR_RES_MAX 480
-#define LV_VER_RES_MAX 480
-
-/* Fonts used by stubs (Cloud Editor export can add more) */
-#define LV_FONT_DEFAULT_MONTSERRAT_16 1
-#define LV_FONT_MONTSERRAT_20 1
-#define LV_FONT_MONTSERRAT_36 1
-#define LV_FONT_MONTSERRAT_48 1
-
-#endif
-EOF
-
-# ---------------------------
-# Firmware CMake
-# ---------------------------
-cat > firmware/CMakeLists.txt << 'EOF'
-cmake_minimum_required(VERSION 3.16)
-project(tempidea_fw C)
-set(CMAKE_C_STANDARD 11)
-add_definitions(-DLV_CONF_INCLUDE_SIMPLE)
-
-include(FetchContent)
-# Pull LVGL (no code committed)
-FetchContent_Declare(
-  lvgl
-  GIT_REPOSITORY https://github.com/lvgl/lvgl.git
-  GIT_TAG release/v9.1
-)
-FetchContent_MakeAvailable(lvgl)
-
-# ---------- SIM (SDL2) ----------
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(SDL2 REQUIRED sdl2)
-
-# LVGL v9 SDL helper sources
-file(GLOB LV_SDL_SRCS ${lvgl_SOURCE_DIR}/src/drivers/sdl/*.c)
-
-# Pick up whatever the LVGL editor exported to firmware/ui/
-file(GLOB_RECURSE UI_SRCS
-  ui/*.c
-)
-
-add_executable(sim
-  main_sim.c
-  ports/sim/sdl_port.c
-  hal/hal_mock.c
-  app/app.c
-  ${UI_SRCS}
-  ${LV_SDL_SRCS}
-)
-
-target_include_directories(sim PRIVATE
-  .
-  ${lvgl_SOURCE_DIR}
-)
-
-target_link_libraries(sim PRIVATE lvgl ${SDL2_LIBRARIES})
-target_include_directories(sim PRIVATE ${SDL2_INCLUDE_DIRS})
-add_compile_definitions(LV_USE_PERF_MONITOR=1)
-
-# ---------- (future) RP2350 ----------
-add_library(rp2350_port STATIC
-  ports/rp2350/rp2350_port.c
-)
-target_include_directories(rp2350_port PUBLIC . ${lvgl_SOURCE_DIR})
-
-add_executable(rp2350_fw
-  main_rp2350.c
-  hal/hal_mock.c        # swap to hal_rp2350.c later
-  app/app.c
-  ${UI_SRCS}
-)
-target_link_libraries(rp2350_fw PRIVATE rp2350_port lvgl)
-target_compile_definitions(rp2350_fw PRIVATE TARGET_RP2350=1)
-EOF
-
-# ---------------------------
-# Ports: SDL (sim) + RP2350 stubs
-# ---------------------------
-cat > firmware/ports/sim/sdl_port.h << 'EOF'
-#pragma once
-#include "lvgl.h"
-void sdl_port_init(uint16_t hor, uint16_t ver);
-EOF
-
-cat > firmware/ports/sim/sdl_port.c << 'EOF'
-#include "sdl_port.h"
-#include "lvgl/src/drivers/sdl/lv_sdl_window.h"
-#include "lvgl/src/drivers/sdl/lv_sdl_mouse.h"
-
-void sdl_port_init(uint16_t hor, uint16_t ver){
-    lv_sdl_window_create(hor, ver);
-    lv_sdl_mouse_create();
-}
-EOF
-
-cat > firmware/ports/rp2350/rp2350_port.h << 'EOF'
-#pragma once
-#include "lvgl.h"
-/* TODO: implement ST7701/GT911 init on hardware */
-void rp2350_port_init(void);
-EOF
-
-cat > firmware/ports/rp2350/rp2350_port.c << 'EOF'
-#include "rp2350_port.h"
-void rp2350_port_init(void){ /* TODO: hardware display/touch init */ }
-EOF
-
-# ---------------------------
-# HAL (mock for sim)
-# ---------------------------
-cat > firmware/hal/hal.h << 'EOF'
-#pragma once
-#include <stdint.h>
-#include <stdbool.h>
-
-typedef struct {
-  float   temp_c;
-  uint8_t duty;   // 0..100
-} hal_telemetry_t;
-
-void hal_init(void);
-void hal_tick_1ms(void);
-void hal_read(hal_telemetry_t* o);
-void hal_set_target(float c);
-void hal_set_manual(bool en, uint8_t d);
-EOF
-
-cat > firmware/hal/hal_mock.c << 'EOF'
-#include "hal.h"
-
-static float target=30.0f, temp=27.0f;
-static uint8_t duty=20;
-static bool manual=false;
-static uint8_t mduty=60;
-
-void hal_init(void) {}
-
-void hal_tick_1ms(void){
-  /* crude thermal model */
-  const float load=6.0f;
-  const float cool=(manual?mduty:duty)*0.03f;
-  temp += (load - cool)*0.002f;
-
-  if(!manual){
-    if(temp > target + 3 && duty < 100) duty++;
-    else if(temp < target - 3 && duty > 20) duty--;
-  }
-}
-
-void hal_read(hal_telemetry_t* o){ o->temp_c=temp; o->duty = manual?mduty:duty; }
-void hal_set_target(float c){ target=c; }
-void hal_set_manual(bool en, uint8_t d){ manual=en; mduty=d; }
-EOF
-
-# ---------------------------
-# App glue
-# ---------------------------
-cat > firmware/app/app.h << 'EOF'
-#pragma once
-void app_init(void);
-void app_update_ui(void);   // call ~4x/sec
-EOF
-
-cat > firmware/app/app.c << 'EOF'
-#include "app.h"
-#include "lvgl.h"
-#include "../hal/hal.h"
-
-/* These labels exist in the stub UI (and in your Cloud Editor export) */
-extern lv_obj_t *ui_LabelTemp;
-extern lv_obj_t *ui_LabelFan;
-
-static void tick_cb(void *arg){ (void)arg; lv_tick_inc(1); hal_tick_1ms(); }
-
-void app_init(void){
-    lv_timer_create(tick_cb, 1, NULL);
-}
-
-void app_update_ui(void){
-    hal_telemetry_t t; hal_read(&t);
-    char b[32];
-    lv_snprintf(b, sizeof b, "%2.0f°", t.temp_c);
-    if (ui_LabelTemp) lv_label_set_text(ui_LabelTemp, b);
-    lv_snprintf(b, sizeof b, "Fan %u%%", t.duty);
-    if (ui_LabelFan) lv_label_set_text(ui_LabelFan, b);
-}
-EOF
-
-# ---------------------------
-# UI stub (replace with editor export)
-# ---------------------------
-cat > firmware/ui/TempIdea_gen.h << 'EOF'
-#pragma once
-#include "lvgl.h"
-#ifdef __cplusplus
-extern "C" {
-#endif
-extern lv_obj_t *ui_MainScreen;
-extern lv_obj_t *ui_LabelTemp;
-extern lv_obj_t *ui_LabelFan;
-void TempIdea_init_gen(const char *asset_path);
-#ifdef __cplusplus
-}
-#endif
-EOF
-
-cat > firmware/ui/TempIdea_gen.c << 'EOF'
-#include "TempIdea_gen.h"
-
-lv_obj_t *ui_MainScreen;
-lv_obj_t *ui_LabelTemp;
-lv_obj_t *ui_LabelFan;
-
-void TempIdea_init_gen(const char *asset_path){
-    (void)asset_path;
-    ui_MainScreen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(ui_MainScreen, lv_color_hex(0x111111), 0);
-
-    ui_LabelTemp = lv_label_create(ui_MainScreen);
-    lv_obj_set_style_text_color(ui_LabelTemp, lv_color_white(), 0);
-    lv_obj_set_style_text_font(ui_LabelTemp, &lv_font_montserrat_48, 0);
-    lv_label_set_text(ui_LabelTemp, "--°");
-    lv_obj_align(ui_LabelTemp, LV_ALIGN_CENTER, 0, -20);
-
-    ui_LabelFan = lv_label_create(ui_MainScreen);
-    lv_obj_set_style_text_color(ui_LabelFan, lv_color_hex(0xE0E0E0), 0);
-    lv_obj_set_style_text_font(ui_LabelFan, &lv_font_montserrat_20, 0);
-    lv_label_set_text(ui_LabelFan, "Fan --%");
-    lv_obj_align(ui_LabelFan, LV_ALIGN_CENTER, 0, 30);
-
-    lv_scr_load(ui_MainScreen);
-}
-EOF
-
-# ---------------------------
-# Entrypoints
-# ---------------------------
-cat > firmware/main_sim.c << 'EOF'
-#include "lvgl.h"
-#include "lv_conf.h"
-#include "ports/sim/sdl_port.h"
-#include "hal/hal.h"
-#include "app/app.h"
-#include "ui/TempIdea_gen.h"
-
-int main(void){
-    lv_init();
-    sdl_port_init(480, 480);
-    TempIdea_init_gen(NULL);
-    hal_init();
-    app_init();
-
-    uint32_t last = 0;
-    for(;;){
-        lv_timer_handler();
-        if (lv_tick_get() - last > 250) { app_update_ui(); last = lv_tick_get(); }
-        lv_delay_ms(5);
-    }
-    return 0;
-}
-EOF
-
-cat > firmware/main_rp2350.c << 'EOF'
-#include "lvgl.h"
-#include "ports/rp2350/rp2350_port.h"
-#include "hal/hal.h"
-#include "app/app.h"
-#include "ui/TempIdea_gen.h"
-
-int main(void){
-    lv_init();
-    rp2350_port_init();      /* TODO: real hardware init */
-    TempIdea_init_gen(NULL);
-    hal_init();              /* swap to real HAL later */
-    app_init();
-
-    for(;;){
-        lv_timer_handler();
-        app_update_ui();
-        lv_delay_ms(5);
-    }
-    return 0;
-}
-EOF
-
-# ---------------------------
-# LVGL Editor project placeholders
-# ---------------------------
-cat > editor/project.xml << 'EOF'
+# project.xml
+cat > lvgl-project/project.xml << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
-<project lvgl_version="9.1" name="TempIdea">
-  <includes>
-    <file>globals.xml</file>
-  </includes>
-  <screens/>
+<project>
+  <meta>
+    <name>TempIdea</name>
+    <version>1.0.0</version>
+    <description>Intelligent Environmental Control Display System</description>
+    <author>TempIdea Team</author>
+  </meta>
+  <settings>
+    <screen_width>480</screen_width>
+    <screen_height>480</screen_height>
+    <color_depth>16</color_depth>
+    <default_screen>main</default_screen>
+  </settings>
+  <screens>
+    <screen name="main" file="screens/main.xml"/>
+  </screens>
 </project>
 EOF
 
-cat > editor/globals.xml << 'EOF'
+# globals.xml
+cat > lvgl-project/globals.xml << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
 <globals>
-  <api>
-    <enumdefs>
-      <enum name="units_mode">
-        <member name="Celsius" value="0"/>
-        <member name="Fahrenheit" value="1"/>
-      </enum>
-    </enumdefs>
-  </api>
-  <consts>
-    <color name="col_bg_dark" value="#111111"/>
-    <color name="col_text"    value="#FFFFFF"/>
-    <color name="col_text_sm" value="#E0E0E0"/>
-    <int name="long_press_ms" value="700"/>
-  </consts>
+  <theme>
+    <primary_color>#2196F3</primary_color>
+    <secondary_color>#FFC107</secondary_color>
+    <background_color>#1E1E1E</background_color>
+    <text_color>#FFFFFF</text_color>
+  </theme>
   <fonts>
-    <tiny_ttf name="font_m20" src="Montserrat-Regular.ttf" size="20"/>
-    <tiny_ttf name="font_m48" src="Montserrat-Regular.ttf" size="48"/>
+    <font name="default" size="16"/>
+    <font name="large" size="32"/>
+    <font name="small" size="12"/>
   </fonts>
-  <styles>
-    <style name="st_bg_dark">
-      <prop name="bg_color" value="@col_bg_dark"/>
-      <prop name="bg_opa"   value="255"/>
-    </style>
-    <style name="st_lbl_big">
-      <prop name="text_color" value="@col_text"/>
-      <prop name="text_font"  value="font_m48"/>
-    </style>
-    <style name="st_lbl_sm">
-      <prop name="text_color" value="@col_text_sm"/>
-      <prop name="text_font"  value="font_m20"/>
-    </style>
-  </styles>
+  <variables>
+    <var name="current_temp" type="int" default="0"/>
+    <var name="target_temp" type="int" default="25"/>
+    <var name="fan_speed" type="int" default="0"/>
+  </variables>
 </globals>
 EOF
 
-# (Optional) editor-side CMake list placeholder
-cat > editor/file_list_gen.cmake << 'EOF'
-# Generated by LVGL Cloud Editor (placeholder).
-# The editor will overwrite this when exporting C.
+# screens/main.xml (example main screen)
+cat > lvgl-project/screens/main.xml << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<screen name="main">
+  <objects>
+    <label id="temp_label">
+      <text>Temperature: --°C</text>
+      <align>center</align>
+      <y>-80</y>
+    </label>
+    <label id="fan_label">
+      <text>Fan Speed: -- RPM</text>
+      <align>center</align>
+      <y>0</y>
+    </label>
+    <button id="settings_btn">
+      <text>Settings</text>
+      <align>center</align>
+      <y>80</y>
+    </button>
+  </objects>
+</screen>
 EOF
 
-# ---------------------------
-# UI sync helper
-# ---------------------------
-cat > tools/sync_ui.sh << 'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-SRC_DIR="${1:-editor/export_c}"   # adjust to your editor's export folder
-DST_DIR="firmware/ui"
-mkdir -p "$DST_DIR"
-if command -v rsync >/dev/null 2>&1; then
-  rsync -av --include="*/" --include="*.c" --include="*.h" --exclude="*" "$SRC_DIR/" "$DST_DIR/"
-else
-  find "$SRC_DIR" -type f \( -name "*.c" -o -name "*.h" \) -exec cp {} "$DST_DIR"/ \;
+# .gitignore for LVGL project
+cat > lvgl-project/.gitignore << 'EOF'
+# Preview binaries (regenerated by Cloud Editor)
+preview-bin/*.wasm
+preview-bin/*.js
+preview-bin/*.html
+
+# Generated files (if you want to regenerate each time)
+# Uncomment if you don't want to commit generated code
+# examples_gen.*
+# file_list_gen.cmake
+EOF
+
+echo -e "  ${GREEN}✓${NC} LVGL project files created"
+
+################################################################################
+# Create Firmware Files
+################################################################################
+
+echo -e "${GREEN}[3/10] Creating firmware source files...${NC}"
+
+# Main entry point
+cat > firmware/src/main.c << 'EOF'
+/**
+ * @file main.c
+ * @brief TempIdea main entry point
+ */
+
+#include "pico/stdlib.h"
+#include "hardware/i2c.h"
+#include "lvgl/lvgl.h"
+#include "ui/ui_init.h"
+#include "drivers/st7701.h"
+#include "drivers/gt911.h"
+#include "drivers/emc2101.h"
+#include "control/temp_controller.h"
+
+#define I2C_PORT i2c0
+#define I2C_SDA_PIN 4
+#define I2C_SCL_PIN 5
+#define I2C_FREQ 400000
+
+int main() {
+    // Initialize stdio
+    stdio_init_all();
+    
+    // Initialize I2C
+    i2c_init(I2C_PORT, I2C_FREQ);
+    gpio_set_function(I2C_SDA_PIN, GPIO_FUNC_I2C);
+    gpio_set_function(I2C_SCL_PIN, GPIO_FUNC_I2C);
+    gpio_pull_up(I2C_SDA_PIN);
+    gpio_pull_up(I2C_SCL_PIN);
+    
+    // Initialize LVGL
+    lv_init();
+    
+    // Initialize display driver
+    st7701_init();
+    
+    // Initialize touch controller
+    gt911_init(I2C_PORT);
+    
+    // Initialize fan controller
+    emc2101_init(I2C_PORT);
+    
+    // Initialize UI
+    ui_init();
+    
+    // Initialize temperature controller
+    temp_controller_init();
+    
+    // Main loop
+    while (1) {
+        lv_timer_handler();
+        temp_controller_update();
+        sleep_ms(5);
+    }
+    
+    return 0;
+}
+EOF
+
+# UI initialization
+cat > firmware/src/ui/ui_init.c << 'EOF'
+/**
+ * @file ui_init.c
+ * @brief LVGL UI initialization and integration
+ */
+
+#include "ui/ui_init.h"
+#include "ui/generated/ui.h"
+#include "lvgl/lvgl.h"
+
+// Display buffer
+static lv_disp_draw_buf_t draw_buf;
+static lv_color_t buf1[480 * 10];
+static lv_color_t buf2[480 * 10];
+
+void ui_init(void) {
+    // Initialize display buffer
+    lv_disp_draw_buf_init(&draw_buf, buf1, buf2, 480 * 10);
+    
+    // Initialize display driver
+    static lv_disp_drv_t disp_drv;
+    lv_disp_drv_init(&disp_drv);
+    disp_drv.draw_buf = &draw_buf;
+    disp_drv.flush_cb = st7701_flush;
+    disp_drv.hor_res = 480;
+    disp_drv.ver_res = 480;
+    lv_disp_drv_register(&disp_drv);
+    
+    // Initialize input device (touch)
+    static lv_indev_drv_t indev_drv;
+    lv_indev_drv_init(&indev_drv);
+    indev_drv.type = LV_INDEV_TYPE_POINTER;
+    indev_drv.read_cb = gt911_read;
+    lv_indev_drv_register(&indev_drv);
+    
+    // Load generated UI
+    ui_init_generated();
+}
+EOF
+
+# Temperature controller
+cat > firmware/src/control/temp_controller.c << 'EOF'
+/**
+ * @file temp_controller.c
+ * @brief Temperature monitoring and fan control logic
+ */
+
+#include "control/temp_controller.h"
+#include "drivers/emc2101.h"
+#include <stdio.h>
+
+static float current_temp = 0.0f;
+static float target_temp = 25.0f;
+static uint8_t fan_speed = 0;
+
+void temp_controller_init(void) {
+    printf("Temperature controller initialized\n");
+    emc2101_set_fan_speed(0);
+}
+
+void temp_controller_update(void) {
+    // Read current temperature
+    current_temp = emc2101_read_temp();
+    
+    // Simple proportional control
+    float error = current_temp - target_temp;
+    
+    if (error > 2.0f) {
+        fan_speed = 100;  // Full speed
+    } else if (error > 0.5f) {
+        fan_speed = (uint8_t)(error * 25.0f);  // Proportional
+    } else {
+        fan_speed = 0;  // Off
+    }
+    
+    emc2101_set_fan_speed(fan_speed);
+}
+
+float temp_controller_get_current_temp(void) {
+    return current_temp;
+}
+
+void temp_controller_set_target_temp(float temp) {
+    target_temp = temp;
+}
+
+uint8_t temp_controller_get_fan_speed(void) {
+    return fan_speed;
+}
+EOF
+
+# Driver stubs
+cat > firmware/src/drivers/st7701.c << 'EOF'
+/**
+ * @file st7701.c
+ * @brief ST7701 display driver for 480x480 IPS LCD
+ */
+
+#include "drivers/st7701.h"
+
+void st7701_init(void) {
+    // TODO: Implement display initialization
+}
+
+void st7701_flush(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p) {
+    // TODO: Implement display flush callback
+    lv_disp_flush_ready(disp_drv);
+}
+EOF
+
+cat > firmware/src/drivers/gt911.c << 'EOF'
+/**
+ * @file gt911.c
+ * @brief GT911 capacitive touch controller driver
+ */
+
+#include "drivers/gt911.h"
+
+void gt911_init(i2c_inst_t *i2c) {
+    // TODO: Implement touch controller initialization
+}
+
+void gt911_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data) {
+    // TODO: Implement touch reading
+    data->state = LV_INDEV_STATE_RELEASED;
+}
+EOF
+
+cat > firmware/src/drivers/emc2101.c << 'EOF'
+/**
+ * @file emc2101.c
+ * @brief EMC2101 fan controller and temperature sensor driver
+ */
+
+#include "drivers/emc2101.h"
+
+#define EMC2101_ADDR 0x4C
+#define TEMP_REG 0x00
+#define FAN_CONFIG_REG 0x4A
+
+static i2c_inst_t *i2c_port;
+
+void emc2101_init(i2c_inst_t *i2c) {
+    i2c_port = i2c;
+    // TODO: Configure EMC2101 registers
+}
+
+float emc2101_read_temp(void) {
+    uint8_t temp_data;
+    i2c_read_blocking(i2c_port, EMC2101_ADDR, &temp_data, 1, false);
+    return (float)temp_data;
+}
+
+void emc2101_set_fan_speed(uint8_t speed_percent) {
+    // TODO: Implement PWM fan control
+}
+
+uint16_t emc2101_read_fan_rpm(void) {
+    // TODO: Read tachometer value
+    return 0;
+}
+EOF
+
+echo -e "  ${GREEN}✓${NC} Firmware source files created"
+
+################################################################################
+# Create Header Files
+################################################################################
+
+echo -e "${GREEN}[4/10] Creating header files...${NC}"
+
+# Ensure all header directories exist
+mkdir -p firmware/include/drivers
+mkdir -p firmware/include/ui
+mkdir -p firmware/include/config
+
+cat > firmware/include/config.h << 'EOF'
+/**
+ * @file config.h
+ * @brief TempIdea configuration parameters
+ */
+
+#ifndef CONFIG_H
+#define CONFIG_H
+
+// I2C Configuration
+#define I2C_PORT i2c0
+#define I2C_SDA_PIN 4
+#define I2C_SCL_PIN 5
+#define I2C_FREQ 400000
+
+// EMC2101 Configuration
+#define EMC2101_I2C_ADDR 0x4C
+
+// Display Configuration
+#define DISPLAY_WIDTH 480
+#define DISPLAY_HEIGHT 480
+
+// Temperature Control
+#define DEFAULT_TARGET_TEMP 25.0f
+#define TEMP_HYSTERESIS 0.5f
+
+#endif // CONFIG_H
+EOF
+
+cat > firmware/include/ui/ui_init.h << 'EOF'
+/**
+ * @file ui_init.h
+ * @brief UI initialization header
+ */
+
+#ifndef UI_INIT_H
+#define UI_INIT_H
+
+void ui_init(void);
+
+#endif // UI_INIT_H
+EOF
+
+cat > firmware/include/control/temp_controller.h << 'EOF'
+/**
+ * @file temp_controller.h
+ * @brief Temperature controller header
+ */
+
+#ifndef TEMP_CONTROLLER_H
+#define TEMP_CONTROLLER_H
+
+#include <stdint.h>
+
+void temp_controller_init(void);
+void temp_controller_update(void);
+float temp_controller_get_current_temp(void);
+void temp_controller_set_target_temp(float temp);
+uint8_t temp_controller_get_fan_speed(void);
+
+#endif // TEMP_CONTROLLER_H
+EOF
+
+cat > firmware/include/drivers/st7701.h << 'EOF'
+/**
+ * @file st7701.h
+ * @brief ST7701 display driver header
+ */
+
+#ifndef ST7701_H
+#define ST7701_H
+
+#include "lvgl/lvgl.h"
+
+void st7701_init(void);
+void st7701_flush(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p);
+
+#endif // ST7701_H
+EOF
+
+cat > firmware/include/drivers/gt911.h << 'EOF'
+/**
+ * @file gt911.h
+ * @brief GT911 touch controller header
+ */
+
+#ifndef GT911_H
+#define GT911_H
+
+#include "hardware/i2c.h"
+#include "lvgl/lvgl.h"
+
+void gt911_init(i2c_inst_t *i2c);
+void gt911_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data);
+
+#endif // GT911_H
+EOF
+
+cat > firmware/include/drivers/emc2101.h << 'EOF'
+/**
+ * @file emc2101.h
+ * @brief EMC2101 fan controller header
+ */
+
+#ifndef EMC2101_H
+#define EMC2101_H
+
+#include "hardware/i2c.h"
+#include <stdint.h>
+
+void emc2101_init(i2c_inst_t *i2c);
+float emc2101_read_temp(void);
+void emc2101_set_fan_speed(uint8_t speed_percent);
+uint16_t emc2101_read_fan_rpm(void);
+
+#endif // EMC2101_H
+EOF
+
+echo -e "  ${GREEN}✓${NC} Header files created"
+
+################################################################################
+# Create CMake Build Files
+################################################################################
+
+echo -e "${GREEN}[5/10] Creating CMake build files...${NC}"
+
+# Top-level CMakeLists.txt
+cat > CMakeLists.txt << 'EOF'
+cmake_minimum_required(VERSION 3.13)
+
+# Include Pico SDK
+include(firmware/pico_sdk_import.cmake)
+
+project(TempIdea C CXX ASM)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
+
+# Initialize Pico SDK
+pico_sdk_init()
+
+# Add firmware subdirectory
+add_subdirectory(firmware)
+EOF
+
+# Firmware CMakeLists.txt
+cat > firmware/CMakeLists.txt << 'EOF'
+# TempIdea Firmware Build Configuration
+
+add_executable(tempidea
+    src/main.c
+    src/drivers/st7701.c
+    src/drivers/gt911.c
+    src/drivers/emc2101.c
+    src/ui/ui_init.c
+    src/control/temp_controller.c
+    # Generated UI files will be added here
+    src/ui/generated/ui.c
+)
+
+target_include_directories(tempidea PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/include
+    ${CMAKE_CURRENT_LIST_DIR}/src/ui/generated
+)
+
+target_link_libraries(tempidea
+    pico_stdlib
+    hardware_i2c
+    hardware_spi
+    hardware_pwm
+    hardware_gpio
+)
+
+# Enable USB output
+pico_enable_stdio_usb(tempidea 1)
+pico_enable_stdio_uart(tempidea 0)
+
+# Create map/bin/hex/uf2 files
+pico_add_extra_outputs(tempidea)
+
+# Link LVGL library (add as submodule or external library)
+# target_link_libraries(tempidea lvgl)
+EOF
+
+# pico_sdk_import.cmake (standard file)
+cat > firmware/pico_sdk_import.cmake << 'EOF'
+# This is a copy of <PICO_SDK_PATH>/external/pico_sdk_import.cmake
+
+# This can be dropped into an external project to help locate this SDK
+# It should be include()ed prior to project()
+
+if (DEFINED ENV{PICO_SDK_PATH} AND (NOT PICO_SDK_PATH))
+    set(PICO_SDK_PATH $ENV{PICO_SDK_PATH})
+    message("Using PICO_SDK_PATH from environment ('${PICO_SDK_PATH}')")
+endif ()
+
+if (DEFINED ENV{PICO_SDK_FETCH_FROM_GIT} AND (NOT PICO_SDK_FETCH_FROM_GIT))
+    set(PICO_SDK_FETCH_FROM_GIT $ENV{PICO_SDK_FETCH_FROM_GIT})
+    message("Using PICO_SDK_FETCH_FROM_GIT from environment ('${PICO_SDK_FETCH_FROM_GIT}')")
+endif ()
+
+if (DEFINED ENV{PICO_SDK_FETCH_FROM_GIT_PATH} AND (NOT PICO_SDK_FETCH_FROM_GIT_PATH))
+    set(PICO_SDK_FETCH_FROM_GIT_PATH $ENV{PICO_SDK_FETCH_FROM_GIT_PATH})
+    message("Using PICO_SDK_FETCH_FROM_GIT_PATH from environment ('${PICO_SDK_FETCH_FROM_GIT_PATH}')")
+endif ()
+
+set(PICO_SDK_PATH "${PICO_SDK_PATH}" CACHE PATH "Path to the Raspberry Pi Pico SDK")
+set(PICO_SDK_FETCH_FROM_GIT "${PICO_SDK_FETCH_FROM_GIT}" CACHE BOOL "Set to ON to fetch copy of SDK from git if not otherwise locatable")
+set(PICO_SDK_FETCH_FROM_GIT_PATH "${PICO_SDK_FETCH_FROM_GIT_PATH}" CACHE FILEPATH "location to download SDK")
+
+if (NOT PICO_SDK_PATH)
+    if (PICO_SDK_FETCH_FROM_GIT)
+        include(FetchContent)
+        set(FETCHCONTENT_BASE_DIR_SAVE ${FETCHCONTENT_BASE_DIR})
+        if (PICO_SDK_FETCH_FROM_GIT_PATH)
+            get_filename_component(FETCHCONTENT_BASE_DIR "${PICO_SDK_FETCH_FROM_GIT_PATH}" REALPATH BASE_DIR "${CMAKE_SOURCE_DIR}")
+        endif ()
+        FetchContent_Declare(
+                pico_sdk
+                GIT_REPOSITORY https://github.com/raspberrypi/pico-sdk
+                GIT_TAG master
+        )
+        if (NOT pico_sdk)
+            message("Downloading Raspberry Pi Pico SDK")
+            FetchContent_Populate(pico_sdk)
+            set(PICO_SDK_PATH ${pico_sdk_SOURCE_DIR})
+        endif ()
+        set(FETCHCONTENT_BASE_DIR ${FETCHCONTENT_BASE_DIR_SAVE})
+    else ()
+        message(FATAL_ERROR
+                "SDK location was not specified. Please set PICO_SDK_PATH or set PICO_SDK_FETCH_FROM_GIT to on to fetch from git."
+                )
+    endif ()
+endif ()
+
+get_filename_component(PICO_SDK_PATH "${PICO_SDK_PATH}" REALPATH BASE_DIR "${CMAKE_BINARY_DIR}")
+if (NOT EXISTS ${PICO_SDK_PATH})
+    message(FATAL_ERROR "Directory '${PICO_SDK_PATH}' not found")
+endif ()
+
+set(PICO_SDK_INIT_CMAKE_FILE ${PICO_SDK_PATH}/pico_sdk_init.cmake)
+if (NOT EXISTS ${PICO_SDK_INIT_CMAKE_FILE})
+    message(FATAL_ERROR "Directory '${PICO_SDK_PATH}' does not appear to contain the Raspberry Pi Pico SDK")
+endif ()
+
+set(PICO_SDK_PATH ${PICO_SDK_PATH} CACHE PATH "Path to the Raspberry Pi Pico SDK" FORCE)
+
+include(${PICO_SDK_INIT_CMAKE_FILE})
+EOF
+
+echo -e "  ${GREEN}✓${NC} CMake build files created"
+
+################################################################################
+# Create Automation Scripts
+################################################################################
+
+echo -e "${GREEN}[6/10] Creating automation scripts...${NC}"
+
+# Sync LVGL generated code
+cat > scripts/sync_lvgl.sh << 'EOF'
+#!/bin/bash
+
+################################################################################
+# Sync LVGL Cloud Editor Generated Code to Firmware
+################################################################################
+
+set -e
+
+LVGL_ROOT="lvgl-project"
+FIRMWARE_UI="firmware/src/ui/generated"
+
+echo "🔄 Syncing LVGL generated code..."
+
+# Check if LVGL project exists
+if [ ! -d "$LVGL_ROOT" ]; then
+    echo "❌ Error: LVGL project directory not found"
+    exit 1
 fi
-echo "✅ UI synced to $DST_DIR"
+
+# Create firmware UI directory if it doesn't exist
+mkdir -p "$FIRMWARE_UI"
+
+# Copy generated C/H files
+echo "  📋 Copying generated source files..."
+
+# Copy examples_gen.c/h if they exist
+if [ -f "$LVGL_ROOT/examples_gen.c" ]; then
+    cp "$LVGL_ROOT/examples_gen.c" "$FIRMWARE_UI/ui.c"
+    echo "    ✓ ui.c"
+fi
+
+if [ -f "$LVGL_ROOT/examples_gen.h" ]; then
+    cp "$LVGL_ROOT/examples_gen.h" "$FIRMWARE_UI/ui.h"
+    echo "    ✓ ui.h"
+fi
+
+# Copy examples.c/h (manual code)
+if [ -f "$LVGL_ROOT/examples.c" ]; then
+    cp "$LVGL_ROOT/examples.c" "$FIRMWARE_UI/ui_custom.c"
+    echo "    ✓ ui_custom.c"
+fi
+
+if [ -f "$LVGL_ROOT/examples.h" ]; then
+    cp "$LVGL_ROOT/examples.h" "$FIRMWARE_UI/ui_custom.h"
+    echo "    ✓ ui_custom.h"
+fi
+
+# Copy assets if needed
+if [ -d "$LVGL_ROOT/images" ]; then
+    mkdir -p "$FIRMWARE_UI/assets"
+    cp -r "$LVGL_ROOT/images"/* "$FIRMWARE_UI/assets/" 2>/dev/null || true
+    echo "    ✓ Image assets"
+fi
+
+echo "✅ Sync complete!"
+echo ""
+echo "Next steps:"
+echo "  1. Build firmware: ./scripts/build.sh"
+echo "  2. Flash to device: ./scripts/flash.sh"
 EOF
-chmod +x tools/sync_ui.sh
 
-# ---------------------------
-# Git init & first build hint
-# ---------------------------
-if [ ! -d .git ]; then git init; fi
-git add .
-git commit -m "chore: scaffold repo (editor/ + firmware/ with SDL sim; LVGL via FetchContent)"
+chmod +x scripts/sync_lvgl.sh
 
-echo "✅ Done."
-echo "➡️  Build locally/Codespaces:"
-echo "   mkdir -p build && cd build && cmake .. && make -j && ./sim"
-echo "📦 When you export C from LVGL Cloud Editor, run:"
-echo "   bash tools/sync_ui.sh path/to/export_c"
+# Build script
+cat > scripts/build.sh << 'EOF'
+#!/bin/bash
+
+################################################################################
+# Build TempIdea Firmware
+################################################################################
+
+set -e
+
+BUILD_DIR="build"
+
+echo "🔨 Building TempIdea firmware..."
+
+# Create build directory
+mkdir -p "$BUILD_DIR"
+cd "$BUILD_DIR"
+
+# Run CMake
+echo "  📝 Configuring with CMake..."
+cmake ..
+
+# Build
+echo "  🏗️  Compiling..."
+make -j$(nproc)
+
+echo ""
+echo "✅ Build complete!"
+echo "   Output: build/firmware/tempidea.uf2"
+echo ""
+echo "To flash:"
+echo "  1. Hold BOOTSEL and connect RP2350"
+echo "  2. Run: ./scripts/flash.sh"
+EOF
+
+chmod +x scripts/build.sh
+
+# Flash script
+cat > scripts/flash.sh << 'EOF'
+#!/bin/bash
+
+################################################################################
+# Flash TempIdea Firmware to RP2350
+################################################################################
+
+set -e
+
+UF2_FILE="build/firmware/tempidea.uf2"
+
+if [ ! -f "$UF2_FILE" ]; then
+    echo "❌ Error: Firmware not built. Run ./scripts/build.sh first"
+    exit 1
+fi
+
+echo "🔌 Flashing TempIdea firmware..."
+
+# Look for RP2350 in bootloader mode
+RPI_MOUNT=$(ls /media/$USER/RPI-RP2* 2>/dev/null | head -n 1)
+
+if [ -z "$RPI_MOUNT" ]; then
+    echo "❌ Error: RP2350 not found in BOOTSEL mode"
+    echo ""
+    echo "To enter BOOTSEL mode:"
+    echo "  1. Hold the BOOTSEL button"
+    echo "  2. Connect USB"
+    echo "  3. Release BOOTSEL"
+    exit 1
+fi
+
+echo "  📍 Found device at: $RPI_MOUNT"
+echo "  📤 Copying firmware..."
+
+cp "$UF2_FILE" "$RPI_MOUNT/"
+
+echo ""
+echo "✅ Firmware flashed successfully!"
+echo "   Device will reboot automatically"
+EOF
+
+chmod +x scripts/flash.sh
+
+# Setup development environment
+cat > scripts/setup_dev.sh << 'EOF'
+#!/bin/bash
+
+################################################################################
+# Setup Development Environment
+################################################################################
+
+set -e
+
+echo "🛠️  Setting up TempIdea development environment..."
+
+# Update package list
+echo "  📦 Updating packages..."
+sudo apt-get update -qq
+
+# Install build essentials
+echo "  🔧 Installing build tools..."
+sudo apt-get install -y -qq \
+    cmake \
+    gcc-arm-none-eabi \
+    libnewlib-arm-none-eabi \
+    build-essential \
+    libstdc++-arm-none-eabi-newlib \
+    git
+
+# Clone Pico SDK if not present
+if [ ! -d "pico-sdk" ]; then
+    echo "  📥 Cloning Pico SDK..."
+    git clone --depth 1 https://github.com/raspberrypi/pico-sdk.git
+    cd pico-sdk
+    git submodule update --init
+    cd ..
+fi
+
+# Set environment variable
+export PICO_SDK_PATH="$(pwd)/pico-sdk"
+echo "export PICO_SDK_PATH=$(pwd)/pico-sdk" >> ~/.bashrc
+
+echo ""
+echo "✅ Development environment ready!"
+echo ""
+echo "Environment variables:"
+echo "  PICO_SDK_PATH=$PICO_SDK_PATH"
+echo ""
+echo "Next steps:"
+echo "  1. Design UI in LVGL Cloud Editor"
+echo "  2. Export and download generated code"
+echo "  3. Copy to lvgl-project/ directory"
+echo "  4. Run: ./scripts/sync_lvgl.sh"
+echo "  5. Run: ./scripts/build.sh"
+EOF
+
+chmod +x scripts/setup_dev.sh
+
+echo -e "  ${GREEN}✓${NC} Automation scripts created"
+
+################################################################################
+# Create Documentation
+################################################################################
+
+echo -e "${GREEN}[7/10] Creating documentation files...${NC}"
+
+# README.md
+cat > README.md << 'EOF'
+# TempIdea
+
+**Intelligent Environmental Control & Display System**
+
+TempIdea is an experimental DIY embedded system combining a touchscreen interface, active cooling control, and real-time environmental sensing. Built on the Waveshare RP2350B development board with a 2.8" IPS LCD and EMC2101 fan controller.
+
+## Features
+
+- 🌡️ Real-time temperature monitoring
+- 💨 Automatic fan speed control
+- 📱 Touch-enabled UI (480×480 IPS LCD)
+- 🎨 LVGL-based interface designed with Cloud Editor
+- ⚡ RP2350 dual-core architecture
+
+## Hardware
+
+- **MCU**: Waveshare RP2350B (RP2040 successor)
+- **Display**: 2.8" IPS LCD (ST7701, 480×480)
+- **Touch**: GT911 capacitive touch controller
+- **Sensors**: EMC2101 fan controller + temperature sensor
+- **Cooling**: Noctua NV-SPH1 with PWM control
+
+## Quick Start
+
+### Prerequisites
+
+- Raspberry Pi Pico SDK
+- CMake 3.13+
+- ARM GCC toolchain
+- LVGL Cloud Editor account
+
+### Setup
+
+```bash
+# Clone repository
+git clone <your-repo-url>
+cd TempIdea
+
+# Setup development environment
+./scripts/setup_dev.sh
+
+# Build firmware
+./scripts/build.sh
+
+# Flash to device
+./scripts/flash.sh
+```
+
+### Development Workflow
+
+1. **Design UI** in LVGL Cloud Editor
+2. **Export** generated code to `lvgl-project/`
+3. **Sync** code with `./scripts/sync_lvgl.sh`
+4. **Build** firmware with `./scripts/build.sh`
+5. **Flash** to device with `./scripts/flash.sh`
+
+## Project Structure
+
+```
+TempIdea/
+├── lvgl-project/        # LVGL Cloud Editor project
+│   ├── project.xml
+│   ├── globals.xml
+│   └── screens/
+├── firmware/            # RP2350 firmware
+│   ├── src/
+│   ├── include/
+│   └── CMakeLists.txt
+├── scripts/             # Build & deployment
+└── docs/                # Documentation
+```
+
+## Documentation
+
+- [Hardware Setup](docs/hardware/setup.md)
+- [Firmware Architecture](docs/api/firmware.md)
+- [LVGL Integration](docs/guides/lvgl-integration.md)
+
+## License
+
+MIT License - See LICENSE file for details
+
+## Contributing
+
+Contributions welcome! Please read CONTRIBUTING.md first.
+EOF
+
+# Hardware setup guide
+cat > docs/hardware/setup.md << 'EOF'
+# Hardware Setup Guide
+
+## Components
+
+1. Waveshare RP2350B Development Board
+2. 2.8" IPS LCD Display (ST7701)
+3. Adafruit EMC2101 Fan Controller
+4. Noctua NV-SPH1 PWM Hub
+5. 5V PWM Fan(s)
+
+## Wiring
+
+### I2C Connections
+
+| Device | SDA | SCL | Address |
+|--------|-----|-----|---------|
+| EMC2101 | GPIO 4 | GPIO 5 | 0x4C |
+| GT911 Touch | GPIO 4 | GPIO 5 | 0x5D |
+
+### Display Interface
+
+The display connects directly to the RP2350B via the board's RGB interface pins.
+
+### Fan Connections
+
+EMC2101 → Noctua NV-SPH1 → Fan(s)
+
+## Assembly
+
+1. Mount display to RP2350B header
+2. Connect EMC2101 to I2C pins
+3. Wire fan controller to Noctua hub
+4. Connect power (USB-C or Li-ion)
+
+## Testing
+
+```bash
+# Build and flash test firmware
+cd firmware
+./scripts/build.sh
+./scripts/flash.sh
+```
+EOF
+
+# Firmware architecture doc
+cat > docs/api/firmware.md << 'EOF'
+# Firmware Architecture
+
+## Overview
+
+TempIdea firmware is organized into modular components:
+
+- **Drivers**: Hardware abstraction (display, touch, sensors)
+- **Control**: Application logic (temperature control, PID)
+- **UI**: LVGL integration and event handlers
+
+## Module Structure
+
+### Drivers (`src/drivers/`)
+
+Hardware drivers for peripherals:
+
+- `st7701.c` - Display driver
+- `gt911.c` - Touch controller
+- `emc2101.c` - Fan controller & temperature sensor
+
+### Control (`src/control/`)
+
+Application control logic:
+
+- `temp_controller.c` - Temperature monitoring and fan control
+
+### UI (`src/ui/`)
+
+LVGL integration:
+
+- `ui_init.c` - LVGL setup and initialization
+- `generated/` - Auto-generated UI code from Cloud Editor
+- `custom/` - Custom event handlers and callbacks
+
+## Build System
+
+CMake-based build using Pico SDK:
+
+```bash
+cmake -B build
+make -C build
+```
+
+Output: `build/firmware/tempidea.uf2`
+
+## Flashing
+
+Hold BOOTSEL, connect USB, copy UF2 file to mounted drive.
+EOF
+
+# LVGL integration guide
+cat > docs/guides/lvgl-integration.md << 'EOF'
+# LVGL Cloud Editor Integration
+
+## Workflow
+
+1. **Design** in LVGL Cloud Editor
+2. **Export** generated code
+3. **Sync** to firmware
+4. **Build** and test
+
+## Exporting from Cloud Editor
+
+1. Click "Export" in editor
+2. Download ZIP containing:
+   - `examples_gen.c/h` (generated UI)
+   - `examples.c/h` (custom code)
+   - Asset files
+
+3. Extract to `lvgl-project/`
+
+## Syncing to Firmware
+
+```bash
+./scripts/sync_lvgl.sh
+```
+
+This copies generated code to `firmware/src/ui/generated/`
+
+## Custom Event Handlers
+
+Add custom logic in `firmware/src/ui/custom/`:
+
+```c
+void ui_event_button_clicked(lv_event_t *e) {
+    // Your custom logic
+    temp_controller_set_target_temp(25.0f);
+}
+```
+
+## Best Practices
+
+- Keep XML sources in version control
+- Commit generated code for reproducibility
+- Use custom event handlers for hardware interaction
+- Test UI in simulator before flashing
+EOF
+
+echo -e "  ${GREEN}✓${NC} Documentation files created"
+
+################################################################################
+# Create Git Configuration
+################################################################################
+
+echo -e "${GREEN}[8/10] Creating Git configuration...${NC}"
+
+cat > .gitignore << 'EOF'
+# Build artifacts
+build/
+*.uf2
+*.elf
+*.bin
+*.hex
+*.map
+
+# Generated files (uncomment if you want to regenerate)
+# firmware/src/ui/generated/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary files
+*.tmp
+*.log
+EOF
+
+echo -e "  ${GREEN}✓${NC} Git configuration created"
+
+################################################################################
+# Create Devcontainer Configuration
+################################################################################
+
+echo -e "${GREEN}[9/10] Creating devcontainer configuration...${NC}"
+
+cat > .devcontainer/devcontainer.json << 'EOF'
+{
+  "name": "TempIdea Development",
+  "image": "mcr.microsoft.com/devcontainers/cpp:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "marus25.cortex-debug",
+        "redhat.vscode-xml"
+      ],
+      "settings": {
+        "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+        "cmake.configureOnOpen": false
+      }
+    }
+  },
+  "postCreateCommand": "bash scripts/setup_dev.sh",
+  "remoteUser": "vscode"
+}
+EOF
+
+echo -e "  ${GREEN}✓${NC} Devcontainer configuration created"
+
+################################################################################
+# Create Placeholder for Generated UI
+################################################################################
+
+echo -e "${GREEN}[10/10] Creating placeholder files...${NC}"
+
+mkdir -p firmware/src/ui/generated
+
+cat > firmware/src/ui/generated/ui.c << 'EOF'
+/**
+ * @file ui.c
+ * @brief Generated UI code (placeholder)
+ * 
+ * This file will be replaced when you sync from LVGL Cloud Editor
+ */
+
+#include "ui.h"
+
+void ui_init_generated(void) {
+    // Placeholder - will be replaced by LVGL Cloud Editor export
+}
+EOF
+
+cat > firmware/src/ui/generated/ui.h << 'EOF'
+/**
+ * @file ui.h
+ * @brief Generated UI header (placeholder)
+ */
+
+#ifndef UI_H
+#define UI_H
+
+void ui_init_generated(void);
+
+#endif // UI_H
+EOF
+
+echo -e "  ${GREEN}✓${NC} Placeholder files created"
+
+################################################################################
+# Summary
+################################################################################
+
+echo ""
+echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║  Setup Complete!                                      ║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "${GREEN}✅ Repository structure created${NC}"
+echo ""
+echo -e "${YELLOW}Next Steps:${NC}"
+echo ""
+echo "  1. Initialize Git repository:"
+echo -e "     ${BLUE}git init${NC}"
+echo -e "     ${BLUE}git add .${NC}"
+echo -e "     ${BLUE}git commit -m \"Initial TempIdea structure\"${NC}"
+echo ""
+echo "  2. Design UI in LVGL Cloud Editor:"
+echo "     • Open https://lvgl.io/tools/cloud-editor"
+echo "     • Create or import your project"
+echo "     • Design your temperature control interface"
+echo ""
+echo "  3. Export and sync UI:"
+echo "     • Export generated code from editor"
+echo "     • Copy to lvgl-project/ directory"
+echo -e "     ${BLUE}./scripts/sync_lvgl.sh${NC}"
+echo ""
+echo "  4. Setup development environment:"
+echo -e "     ${BLUE}./scripts/setup_dev.sh${NC}"
+echo ""
+echo "  5. Build and flash firmware:"
+echo -e "     ${BLUE}./scripts/build.sh${NC}"
+echo -e "     ${BLUE}./scripts/flash.sh${NC}"
+echo ""
+echo -e "${GREEN}📚 Documentation:${NC}"
+echo "   • README.md - Project overview"
+echo "   • docs/hardware/setup.md - Hardware wiring"
+echo "   • docs/api/firmware.md - Code architecture"
+echo "   • docs/guides/lvgl-integration.md - UI workflow"
+echo ""
+echo -e "${YELLOW}Happy building! 🚀${NC}"
+echo ""

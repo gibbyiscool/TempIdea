@@ -1,20 +1,20 @@
-<screen name="Main">
-  <object class="lv_obj" name="Root">
-    <property name="bg_color" value="#111111"/>
-    <property name="bg_opa" value="255"/>
-
-    <object class="lv_label" name="LabelTemp">
-      <property name="text" value="--°"/>
-      <property name="align" value="center"/>
-      <property name="y" value="-20"/>
-      <property name="text_color" value="#FFFFFF"/>
-    </object>
-
-    <object class="lv_label" name="LabelFan">
-      <property name="text" value="Fan --%"/>
-      <property name="align" value="center"/>
-      <property name="y" value="30"/>
-      <property name="text_color" value="#E0E0E0"/>
-    </object>
-  </object>
+<?xml version="1.0" encoding="UTF-8"?>
+<screen name="main">
+  <objects>
+    <label id="temp_label">
+      <text>Temperature: --°C</text>
+      <align>center</align>
+      <y>-80</y>
+    </label>
+    <label id="fan_label">
+      <text>Fan Speed: -- RPM</text>
+      <align>center</align>
+      <y>0</y>
+    </label>
+    <button id="settings_btn">
+      <text>Settings</text>
+      <align>center</align>
+      <y>80</y>
+    </button>
+  </objects>
 </screen>
