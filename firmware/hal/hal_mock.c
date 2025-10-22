@@ -8,9 +8,11 @@ static uint8_t mduty=60;
 void hal_init(void) {}
 
 void hal_tick_1ms(void){
-  /* crude thermal sim */
-  float load=6.0f, cool=(manual?mduty:duty)*0.03f;
+  /* crude thermal model */
+  const float load=6.0f;
+  const float cool=(manual?mduty:duty)*0.03f;
   temp += (load - cool)*0.002f;
+
   if(!manual){
     if(temp > target + 3 && duty < 100) duty++;
     else if(temp < target - 3 && duty > 20) duty--;

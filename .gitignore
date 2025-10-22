@@ -5,3 +5,9 @@ build/
 *.out
 *.log
 .DS_Store
+# LVGL Editor preview cache
+editor/preview-bin/
+
+.env
+.env.local
+.env.*.local
