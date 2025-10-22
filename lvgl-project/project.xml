@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<lved>
-  <project>
-    <n>TempIdea</n>
-    <width>480</width>
-    <height>480</height>
-    <color_depth>16</color_depth>
-    <lvgl_version>9.2.0</lvgl_version>
-  </project>
-</lved>
+<project>
+  <name>TempIdea</name>
+  <width>480</width>
+  <height>480</height>
+  <color_depth>16</color_depth>
+</project>
