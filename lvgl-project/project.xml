@@ -1,7 +1,7 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<project>
-  <name>TempIdea</name>
-  <width>480</width>
-  <height>480</height>
-  <color_depth>16</color_depth>
+<project name="TempIdea">
+	<targets>
+		<target name="main_display">
+			<display width="480" height="480" />
+		</target>
+	</targets>
 </project>

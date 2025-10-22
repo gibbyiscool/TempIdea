@@ -1,3 +1,39 @@
-<?xml version="1.0" encoding="UTF-8"?>
 <globals>
+	<api>
+		<!-- Add <enumdefs> here if needed -->
+	</api>
+
+	<consts>
+		<int name="unit_sm" value="6" />
+		<int name="unit_md" value="12" />
+		<int name="unit_lg" value="18" />
+		<int name="unit_xl" value="24" />
+		
+		<color name="bg_dark" value="0x0e0e0e" />
+		<color name="text_light" value="0xffffff" />
+		<color name="accent_primary" value="0xAF4ADE" />
+		<color name="accent_secondary" value="0xe9deaf" />
+	</consts>
+
+	<styles>
+		<style name="style_reset" width="content" height="content" bg_opa="0" border_width="0" radius="0" pad_all="0" />
+		<style name="style_main_bg" bg_color="#bg_dark" />
+		<style name="style_text_light" text_color="#text_light" />
+	</styles>
+
+	<subjects>
+		<int name="current_temp" value="25" help="Current temperature in Celsius" />
+		<int name="target_temp" value="25" help="Target temperature in Celsius" />
+		<int name="fan_speed" value="0" help="Fan speed 0-100%" min_value="0" max_value="100" />
+		<int name="fan_rpm" value="0" help="Fan speed in RPM" />
+	</subjects>
+
+	<images>
+	</images>
+
+	<fonts>
+		<font name="default" size="16"/>
+		<font name="large" size="32"/>
+		<font name="small" size="12"/>
+	</fonts>
 </globals>
