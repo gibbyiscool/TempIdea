@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="TempIdea" lvgl_version="9.1">
+  <includes>
+    <file>globals.xml</file>
+  </includes>
+  <components/>
+  <widgets/>
+  <screens>
+    <screen name="Main" file="screens/main.xml"/>
+  </screens>
+  <resources>
+    <fonts/>
+    <images/>
+  </resources>
+</project>
