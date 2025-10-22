@@ -1,20 +1,47 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<screen name="main">
-  <objects>
-    <label id="temp_label">
-      <text>Temperature: --°C</text>
-      <align>center</align>
-      <y>-80</y>
-    </label>
-    <label id="fan_label">
-      <text>Fan Speed: -- RPM</text>
-      <align>center</align>
-      <y>0</y>
-    </label>
-    <button id="settings_btn">
-      <text>Settings</text>
-      <align>center</align>
-      <y>80</y>
-    </button>
-  </objects>
-</screen>
+<lved>
+  <screen>
+    <n>main</n>
+    <obj>
+      <type>screen</type>
+      <n>main_screen</n>
+      <children>
+        <obj>
+          <type>label</type>
+          <n>temp_label</n>
+          <props>
+            <text>Temperature: --°C</text>
+            <align>center</align>
+            <y>-80</y>
+          </props>
+        </obj>
+        <obj>
+          <type>label</type>
+          <n>fan_label</n>
+          <props>
+            <text>Fan Speed: -- RPM</text>
+            <align>center</align>
+            <y>0</y>
+          </props>
+        </obj>
+        <obj>
+          <type>btn</type>
+          <n>settings_btn</n>
+          <props>
+            <align>center</align>
+            <y>80</y>
+          </props>
+          <children>
+            <obj>
+              <type>label</type>
+              <n>btn_label</n>
+              <props>
+                <text>Settings</text>
+              </props>
+            </obj>
+          </children>
+        </obj>
+      </children>
+    </obj>
+  </screen>
+</lved>
