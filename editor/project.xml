@@ -1,7 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project lvgl_version="9.1" name="TempIdea">
-  <includes>
-    <file>globals.xml</file>
-  </includes>
-  <screens/>
+<project name="TempIdea" lvgl_version="9.1">
+  <!-- Point to globals -->
+  <globals file="globals.xml"/>
+
+  <!-- Lists can be empty, but they must exist -->
+  <components/>
+  <widgets/>
+
+  <!-- At least one screen file must exist and be referenced -->
+  <screens>
+    <screen name="Main" file="screens/main.xml"/>
+  </screens>
+
+  <!-- Optional assets lists -->
+  <resources>
+    <fonts/>
+    <images/>
+  </resources>
 </project>

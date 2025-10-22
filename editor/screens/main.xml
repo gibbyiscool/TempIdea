@@ -1,0 +1,20 @@
+<screen name="Main">
+  <obj type="lv_obj" name="Root">
+    <prop name="bg_color" value="#111111"/>
+    <prop name="bg_opa" value="255"/>
+
+    <child type="lv_label" name="LabelTemp">
+      <prop name="text" value="--°"/>
+      <prop name="align" value="center"/>
+      <prop name="y" value="-20"/>
+      <prop name="text_color" value="#FFFFFF"/>
+    </child>
+
+    <child type="lv_label" name="LabelFan">
+      <prop name="text" value="Fan --%"/>
+      <prop name="align" value="center"/>
+      <prop name="y" value="30"/>
+      <prop name="text_color" value="#E0E0E0"/>
+    </child>
+  </obj>
+</screen>
